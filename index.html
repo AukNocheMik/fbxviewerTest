@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ModelViewer</title>
+    <link rel="stylesheet">
+    <style>
+        html,body {
+            width: 100%;
+            height: 100%;
+            padding: 0px;
+            margin: 0px;
+            overflow-x: hidden;
+            overflow-y: hidden;
+        }
+
+
+    </style>
+</head>
+<body onload="draw()">
+<div id="container">
+
+</div>
+<button onclick="getCameraPosition()"></button>
+</body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/17.1.1/Tween.min.js"></script>
+<script src="libs/three.js"></script>
+
+
+<!--<script src="js/WebViewModel.js"></script>-->
+<script src="libs/inflate.min.js"></script>
+<script src="libs/FBXLoader.js"></script>
+<script src="libs/OrbitControls.js"></script>
+<script type="text/javascript">
+    var model_url;
+    if(!window.localStorage){
+        alert('web no support localStorage');
+    }else{
+        model_url = 'models/house.FBX';
+        var storage = window.localStorage;
+        storage["url"] = model_url;     // 填入模型路径；
+    }
+
+    var renderer, light, mixers = [],orbit;
+    var clock = new THREE.Clock();
+    var modelShow;
+    var hotspotGroup = new THREE.Group();
+    var mouseDown = false;
+    var modelGroup = new THREE.Group();
+    var pormGroup = new THREE.Group();
+    var pormGroup1 = new THREE.Group();
+    var currentGruop,nextGroup;
+    function initRender() {                 //渲染方式
+        renderer = new THREE.WebGLRenderer({
+            alpha: true,
+            antialias: true
+        });
+
+        renderer.shadowMap.enabled = true;
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.setClearColor(0xd7d7d7);
+        document.getElementById("container").appendChild(renderer.domElement);
+        window.addEventListener( "mousemove", onDocumentMouseMove, false );
+        window.addEventListener( "mouseup", onDocumentMouseup, false );
+        window.addEventListener( "mousedown", onDocumentMouseDown, false );
+    }
+
+    function getModelUrl() {
+        var storage = window.localStorage;
+        model_url = storage["url"];     // 模型路径
+    }
+
+    function  getCameraPosition() {
+        console.log(camera.position);
+
+    }
+    var camera;
+
+    function initCamera() {
+        camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100000);
+        camera.rotation.x = -Math.PI / 6;
+        camera.position.set(0, 0, 1);               //摄像机位置
+    }
+
+    var scene;
+
+    function initScene() {
+        scene = new THREE.Scene();
+        orbit = new THREE.OrbitControls( camera, renderer.domElement );
+        orbit.update();
+
+    }
+
+    function initLight() {      //灯光渲染
+        light = new THREE.HemisphereLight(0xffffff, 0x444444);
+        light.position.set(0, 200, 0);
+        scene.add(light);
+
+        light = new THREE.DirectionalLight(0xffffff);
+        light.position.set(0, 200, 100);
+        light.castShadow = true;
+        light.shadow.camera.top = 180;
+        light.shadow.camera.bottom = -100;
+        light.shadow.camera.left = -120;
+        light.shadow.camera.right = 120;
+        scene.add(light);
+    }
+    function initLoader() {
+        // ========   fbx loader
+        if (model_url.indexOf('.FBX') > 0) {
+            console.log(model_url);
+
+            var loader = new THREE.FBXLoader();    // 加载fbx 模型
+            loader.load(model_url, function (object) {
+                modelShow = object;
+                object.position.set(0,-1400,0);
+                modelGroup.add(object);
+                scene.add(modelGroup);
+
+            });
+        }
+        // 实例化一个mesh;
+        var spriteMap= new THREE.TextureLoader().load("models/point.png");
+
+        var geometry = new THREE.PlaneBufferGeometry( 1, 1, 32 );
+        var material = new THREE.MeshBasicMaterial( {map: spriteMap,color: 0xffffff, side: THREE.DoubleSide} );
+        material.transparent = true;
+        var sprite1 = new THREE.Mesh( geometry, material );
+        sprite1.position.set(100,-640,10);
+        sprite1.rotation.x = Math.PI /2;
+        hotspotGroup.add(sprite1);
+
+
+        // 实例化一个mesh;
+        var geometry = new THREE.PlaneBufferGeometry( 1, 1, 32 );
+        var material = new THREE.MeshBasicMaterial( {map: spriteMap,color: 0xffffff, side: THREE.DoubleSide} );
+        material.transparent = true;
+        var sprite2 = new THREE.Mesh( geometry, material );
+        sprite1.scale.set(130,130,1);
+        sprite2.scale.set(130,130,1);
+        sprite2.position.set(-570,-640,-570);
+        sprite2.rotation.set(Math.PI/2,0,0);
+        hotspotGroup.add(sprite2);
+        modelGroup.add(hotspotGroup);
+        scene.add(modelGroup);
+        loadNextCube();
+        loadParacube();
+    }
+
+    var selectedObject = null;
+    var move_x,move_y;
+    function onDocumentMouseMove( event ) {
+        event.preventDefault();
+        if(!mouseDown){
+        if ( selectedObject ) {
+            selectedObject.material.color.set( '#69f' );
+            selectedObject = null;
+        }
+        var intersects = getIntersects( event.layerX, event.layerY );
+        if ( intersects.length > 0 ) {
+            var res = intersects.filter( function ( res ) {
+                return res && res.object;
+            } )[ 0 ];
+            if ( res && res.object ) {
+                selectedObject = res.object;
+                selectedObject.material.color.set( '#f00' );
+            }
+        }
+        }else{
+            // 开始移动模型
+            move_x = event.movementX;
+            move_y = event.movementY;
+
+        }
+    }
+    var raycaster = new THREE.Raycaster();
+    var mouseVector = new THREE.Vector3();
+    function getIntersects( x, y ) {
+        x = ( x / window.innerWidth ) * 2 - 1;
+        y = - ( y / window.innerHeight ) * 2 + 1;
+        mouseVector.set( x, y, 0.5 );
+        raycaster.setFromCamera( mouseVector, camera );
+        return raycaster.intersectObject( hotspotGroup, true );
+    }
+
+    function  onDocumentMouseup(event) {
+        event.preventDefault();
+
+        mouseDown = false;
+        if(selectedObject){
+            orbit.target = new THREE.Vector3(selectedObject.position.x,camera.position.y,selectedObject.position.z);
+        if(selectedObject.position.x == -570){
+            nextGroup = pormGroup1;
+            currentGruop = pormGroup;
+        }else {
+            nextGroup = pormGroup;
+            currentGruop = pormGroup1;
+        }
+                var coords1 = {x:100}
+                var tween1 = new TWEEN.Tween(coords1)
+                    .to({ x:0 }, 4000)
+                    .easing(TWEEN.Easing.Exponential.Out)
+                    .onUpdate(function() {
+                        currentGruop.children[0].material.opacity = coords1.x/100;
+                        currentGruop.children[0].material.transparent = true;
+                        currentGruop.children[1].material.opacity = coords1.x/100;
+                        currentGruop.children[1].material.transparent = true;
+                        currentGruop.children[2].material.opacity = coords1.x/100;
+                        currentGruop.children[2].material.transparent = true;
+                        currentGruop.children[3].material.opacity = coords1.x/100;
+                        currentGruop.children[3].material.transparent = true;
+                        currentGruop.children[4].material.opacity = coords1.x/100;
+                        currentGruop.children[4].material.transparent = true;
+                        currentGruop.children[5].material.opacity = coords1.x/100;
+                        currentGruop.children[5].material.transparent = true;
+
+                    }).start();
+            tween1.onStart(function () {
+                nextGroup.visible = true;
+                console.log(nextGroup);
+                console.log(currentGruop);
+                currentGruop.children[0].material.opacity = 1;
+                currentGruop.children[0].material.transparent = true;
+                currentGruop.children[1].material.opacity = 1;
+                currentGruop.children[1].material.transparent = true;
+                currentGruop.children[2].material.opacity = 1;
+                currentGruop.children[2].material.transparent = true;
+                currentGruop.children[3].material.opacity = 1;
+                currentGruop.children[3].material.transparent = true;
+                currentGruop.children[4].material.opacity = 1;
+                currentGruop.children[4].material.transparent = true;
+                currentGruop.children[5].material.opacity = 1;
+                currentGruop.children[5].material.transparent = true;
+            });
+                    var targetPosition = selectedObject.position;
+                    var startPosition = camera.position;
+                    var coords3 = {x:startPosition.x,z:startPosition.z}
+                    var tween3 = new TWEEN.Tween(coords3)
+                        .to({ x:targetPosition.x,z:targetPosition.z }, 4000)
+                        .easing(TWEEN.Easing.Exponential.Out)
+                        .onUpdate(function() {
+                            camera.position.set(coords3.x,0,coords3.z);
+                        }).start();
+
+                    tween3.onComplete(function () {
+                        // console.log('enter');
+                        // nextGroup.visible = true;
+                        // currentGroup.visible = true;
+                        // nextGroup.children[0].material.opacity = 1;
+                        // nextGroup.children[0].material.transparent = true;
+                        // nextGroup.children[1].material.opacity = 1;
+                        // nextGroup.children[1].material.transparent = true;
+                        // nextGroup.children[2].material.opacity = 1;
+                        // nextGroup.children[2].material.transparent = true;
+                        // nextGroup.children[3].material.opacity = 1;
+                        // nextGroup.children[3].material.transparent = true;
+                        // nextGroup.children[4].material.opacity = 1;
+                        // nextGroup.children[4].material.transparent = true;
+                        // nextGroup.children[5].material.opacity = 1;
+                        // nextGroup.children[5].material.transparent = true;
+                    });
+
+
+        }
+    }
+
+    function onDocumentMouseDown() {
+        event.preventDefault();
+        mouseDown = true;
+    }
+    function loadParacube() {
+       // 新建一个6面体，由6个plane 合成出来的；
+        var texture_back= new THREE.TextureLoader().load("models/2/abc_back.jpg");
+
+        var geometry_back = new THREE.PlaneGeometry( 10, 10, 32 );
+        var material_back = new THREE.MeshBasicMaterial( {map: texture_back, side: THREE.DoubleSide} );
+        var plane_back = new THREE.Mesh( geometry_back, material_back );
+        plane_back.scale.set(130,130,1);
+        plane_back.position.set(0,0,-650);
+        pormGroup.add(plane_back);
+
+        var texture_forward= new THREE.TextureLoader().load("models/2/abc_forward.jpg");
+
+        var geometry_forward = new THREE.PlaneGeometry( 10, 10, 32 );
+        var material_forward = new THREE.MeshBasicMaterial( {map: texture_forward, side: THREE.DoubleSide} );
+        var plane_forward = new THREE.Mesh( geometry_forward, material_forward );
+        plane_forward.scale.set(130,130,1);
+        plane_forward.rotation.y = Math.PI ;
+        plane_forward.position.set(0,0,650);
+        pormGroup.add(plane_forward);
+
+        var texture_right= new THREE.TextureLoader().load("models/2/abc_left.jpg");
+
+        var geometry_right = new THREE.PlaneGeometry( 10, 10, 32 );
+        var material_right = new THREE.MeshBasicMaterial( {map: texture_right, side: THREE.DoubleSide} );
+        var plane_right = new THREE.Mesh( geometry_right, material_right );
+        plane_right.scale.set(130,130,1);
+        plane_right.rotation.y = -Math.PI /2 ;
+        plane_right.position.set(650,0,0);
+        pormGroup.add(plane_right);
+
+        var texture_left= new THREE.TextureLoader().load("models/2/abc_right.jpg");
+
+        var geometry_left = new THREE.PlaneGeometry( 10, 10, 32 );
+        var material_left = new THREE.MeshBasicMaterial( {map: texture_left, side: THREE.DoubleSide} );
+        var plane_left = new THREE.Mesh( geometry_left, material_left );
+        plane_left.scale.set(130,130,1);
+        plane_left.rotation.y =  Math.PI /2 ;
+        plane_left.position.set(-650,0,0);
+        pormGroup.add(plane_left);
+
+        var texture_top= new THREE.TextureLoader().load("models/2/abc_top.jpg");
+
+        var geometry_top = new THREE.PlaneGeometry( 10, 10, 32 );
+        var material_top = new THREE.MeshBasicMaterial( {map: texture_top, side: THREE.DoubleSide} );
+        var plane_top = new THREE.Mesh( geometry_top, material_top );
+        plane_top.scale.set(130,130,1);
+        plane_top.rotation.x =  -Math.PI /2 ;
+        plane_top.position.set(0,650,0);
+        pormGroup.add(plane_top);
+
+        var texture_bottom= new THREE.TextureLoader().load("models/2/abc_bottom.jpg");
+
+        var geometry_bottom = new THREE.PlaneGeometry( 10, 10, 32 );
+        var material_bottom = new THREE.MeshBasicMaterial( {map: texture_bottom, side: THREE.DoubleSide} );
+        var plane_bottom = new THREE.Mesh( geometry_bottom, material_bottom );
+        plane_bottom.scale.set(130,130,1);
+        plane_bottom.rotation.x =  Math.PI /2 ;
+        plane_bottom.position.set(0,-650,0);
+        pormGroup.add(plane_bottom);
+        currentGruop = pormGroup;
+        scene.add( pormGroup );
+
+    }
+
+    function loadNextCube() {
+    // sprite2.position.set(-570,-640,-570);
+        var texture_back= new THREE.TextureLoader().load("models/1/abc_back.jpg");
+
+        var geometry_back = new THREE.PlaneGeometry( 10, 10, 32 );
+        var material_back = new THREE.MeshBasicMaterial( {map: texture_back, side: THREE.DoubleSide} );
+        var plane_back = new THREE.Mesh( geometry_back, material_back );
+        plane_back.scale.set(130,130,1);
+        plane_back.position.set(-570,0,-1220);
+        pormGroup1.add(plane_back);
+
+        var texture_forward= new THREE.TextureLoader().load("models/1/abc_forward.jpg");
+
+        var geometry_forward = new THREE.PlaneGeometry( 10, 10, 32 );
+        var material_forward = new THREE.MeshBasicMaterial( {map: texture_forward, side: THREE.DoubleSide} );
+        var plane_forward = new THREE.Mesh( geometry_forward, material_forward );
+        plane_forward.scale.set(130,130,1);
+        plane_forward.rotation.y = Math.PI ;
+        plane_forward.position.set(-570,0,80);
+        pormGroup1.add(plane_forward);
+
+        var texture_right= new THREE.TextureLoader().load("models/1/abc_left.jpg");
+
+        var geometry_right = new THREE.PlaneGeometry( 10, 10, 32 );
+        var material_right = new THREE.MeshBasicMaterial( {map: texture_right, side: THREE.DoubleSide} );
+        var plane_right = new THREE.Mesh( geometry_right, material_right );
+        plane_right.scale.set(130,130,1);
+        plane_right.rotation.y = -Math.PI /2 ;
+        plane_right.position.set(80,0,-570);
+        pormGroup1.add(plane_right);
+
+        var texture_left= new THREE.TextureLoader().load("models/1/abc_right.jpg");
+
+        var geometry_left = new THREE.PlaneGeometry( 10, 10, 32 );
+        var material_left = new THREE.MeshBasicMaterial( {map: texture_left, side: THREE.DoubleSide} );
+        var plane_left = new THREE.Mesh( geometry_left, material_left );
+        plane_left.scale.set(130,130,1);
+        plane_left.rotation.y =  Math.PI /2 ;
+        plane_left.position.set(-1220,0,0-570);
+        pormGroup1.add(plane_left);
+
+        var texture_top= new THREE.TextureLoader().load("models/1/abc_top.jpg");
+
+        var geometry_top = new THREE.PlaneGeometry( 10, 10, 32 );
+        var material_top = new THREE.MeshBasicMaterial( {map: texture_top, side: THREE.DoubleSide} );
+        var plane_top = new THREE.Mesh( geometry_top, material_top );
+        plane_top.scale.set(130,130,1);
+        plane_top.rotation.x =  -Math.PI /2 ;
+        plane_top.rotation.y =  Math.PI ;
+        plane_top.position.set(-570,650,-570);
+        pormGroup1.add(plane_top);
+
+        var texture_bottom= new THREE.TextureLoader().load("models/1/abc_bottom.jpg");
+
+        var geometry_bottom = new THREE.PlaneGeometry( 10, 10, 32 );
+        var material_bottom = new THREE.MeshBasicMaterial( {map: texture_bottom, side: THREE.DoubleSide} );
+        var plane_bottom = new THREE.Mesh( geometry_bottom, material_bottom );
+        plane_bottom.scale.set(130,130,1);
+        plane_bottom.rotation.x =  Math.PI /2 ;
+        plane_bottom.rotation.y =  Math.PI ;
+        plane_bottom.position.set(-570,-650,-570);
+
+        pormGroup1.add(plane_bottom);
+        nextGroup = pormGroup1;
+        nextGroup.visible = false;
+        scene.add( pormGroup1 );
+    }
+    // model loader
+
+
+    function render() {
+        renderer.render(scene, camera);
+
+    }
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        render();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        //controls.handleResize();
+    }
+
+    function animate() {
+        TWEEN.update();
+        render();
+
+        if (mixers.length > 0) {
+
+            for (var i = 0; i < mixers.length; i++) {
+
+                mixers[i].update(clock.getDelta());
+
+            }
+
+        }
+        requestAnimationFrame(animate);
+
+    }
+
+
+    function draw() {       //初始化方法
+
+        getModelUrl();
+        initCamera();
+        initRender();
+        initScene();
+        initLoader();
+        initLight();
+        animate();
+
+        window.onresize = onWindowResize;
+    }
+
+</script>
+</html>
